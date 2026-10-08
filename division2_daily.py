@@ -233,14 +233,17 @@ def pick_escalation_snapshot(data: Dict, target_day: str) -> Tuple[str, str, Lis
 
     mission_rows: List[List[str]] = []
     max_len = min(len(chosen_missions), len(chosen_loot))
+
     for i in range(max_len):
-        mission_rows.append([str(i + 1), chosen_missions[i], chosen_loot[i]])
+        mission_rows.append([
+            str(i + 1),
+            chosen_missions[i],
+            chosen_loot[i]
+        ])
 
     vendor_rows = [
-        vendor_rows = [
         ["1", "Ausrüstungskiste", gear_cache],
         ["2", "Waffenkiste", weapon_cache],
-]
     ]
 
     return chosen_week, chosen_day, mission_rows, vendor_rows
