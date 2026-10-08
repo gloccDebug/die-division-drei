@@ -60,13 +60,16 @@ def fetch_json(url: str) -> Dict:
 
 
 TOKEN_LABELS = {
-   "ar": "Sturmgewehr",
+    # Waffen
+    "ar": "Sturmgewehr",
     "lmg": "LMG",
     "mmr": "Präzisionsgewehr",
     "pistol": "Pistole",
     "rifle": "Gewehr",
     "shotgun": "Schrotflinte",
     "smg": "MP",
+
+    # Ausrüstungsteile
     "mask": "Maske",
     "backpack": "Rucksack",
     "chest": "Brustschutz",
@@ -76,11 +79,69 @@ TOKEN_LABELS = {
 }
 
 
+# ==========================================================
+# DEUTSCHE NAMEN DER AUSRÜSTUNGSGARNITUREN
+# Nur Namen eintragen, die sicher belegt sind.
+# Unbekannte Namen bleiben automatisch Englisch.
+# ==========================================================
+
+GEAR_SET_LABELS = {
+    # Striker's Battlegear
+    "striker's battlegear": "Kampfausrüstung des Stürmers",
+    "strikers battlegear": "Kampfausrüstung des Stürmers",
+
+    "core strength": "Rumpfstärke",
+
+    # Aces & Eights
+    "aces & eights": "Asse und Achten",
+
+    # Hunter's Fury
+    "hunter's fury": "Zorn des Jägers",
+    "hunters fury": "Zorn des Jägers",
+
+    # Foundry Bulwark
+    "foundry bulwark": "Gießerei-Bollwerk",
+
+    # Future Initiative
+    "future initiative": "Zukunftsinitiative",
+}
+
+
 def normalize_label(value: str) -> str:
     raw = str(value or "").strip()
+
     if not raw:
         return "N/A"
-    return TOKEN_LABELS.get(raw.lower(), raw)
+
+    # Waffen / Ausrüstungsteile
+    token_result = TOKEN_LABELS.get(raw.lower())
+    if token_result:
+        return token_result
+
+    # Ausstattungsgarnituren
+    gear_result = GEAR_SET_LABELS.get(raw.lower())
+    if gear_result:
+        return gear_result
+
+    # Alles, was wir noch nicht sicher übersetzt haben,
+    # bleibt im originalen englischen Namen.
+    return raw
+
+
+CACHE_LABELS = {
+    "prototype gear cache": "Prototyp-Ausrüstungskiste",
+    "prototype weapon cache": "Prototyp-Waffenkiste",
+}
+
+
+def normalize_cache_label(value: str) -> str:
+    raw = str(value or "").strip()
+
+    if not raw:
+        return "N/A"
+
+    return CACHE_LABELS.get(raw.lower(), raw)
+
 
 
 def build_table(headers: List[str], rows: List[List[str]]) -> str:
@@ -130,8 +191,14 @@ def pick_escalation_snapshot(data: Dict, target_day: str) -> Tuple[str, str, Lis
             chosen_day = day
             chosen_missions = [str(m).strip() for m in missions]
             chosen_loot = [normalize_label(v) for v in row.get("target_loot", [])]
-            gear_cache = normalize_label(str(row.get("prototype_gear_cache", "")).strip())
-            weapon_cache = normalize_label(str(row.get("prototype_weapon_cache", "")).strip())
+            gear_cache = normalize_cache_label(
+            str(row.get("prototype_gear_cache", "")).strip()
+            )
+
+            weapon_cache = normalize_cache_label(
+            str(row.get("prototype_weapon_cache", "")).strip()
+            )
+            
             break
         if chosen_day:
             break
@@ -170,8 +237,10 @@ def pick_escalation_snapshot(data: Dict, target_day: str) -> Tuple[str, str, Lis
         mission_rows.append([str(i + 1), chosen_missions[i], chosen_loot[i]])
 
     vendor_rows = [
-        ["1", "Prototype Gear Cache", gear_cache],
-        ["2", "Prototype Weapon Cache", weapon_cache],
+        vendor_rows = [
+        ["1", "Ausrüstungskiste", gear_cache],
+        ["2", "Waffenkiste", weapon_cache],
+]
     ]
 
     return chosen_week, chosen_day, mission_rows, vendor_rows
@@ -194,7 +263,7 @@ def build_discord_embed(week: str, target_day: str, mission_rows: List[List[str]
                 "inline": False,
             },
             {
-                "name": "🛒 Eskalation Händler",
+                "name": "🛒 Eskalation / Prototyp Händler",
                 "value": truncate(vendor_table, 1024),
                 "inline": False,
             },
