@@ -26,8 +26,8 @@ DISCORD_WEBHOOK_URL = os.getenv("DISCORD_WEBHOOK_URL", "")
 REQUEST_TIMEOUT = int(os.getenv("REQUEST_TIMEOUT", "30"))
 
 EMBED_COLOR = int(os.getenv("EMBED_COLOR", str(0xE67E22)))
-EMBED_FOOTER = os.getenv("EMBED_FOOTER", "Escalation Target Loot")
-EMBED_USERNAME = os.getenv("EMBED_USERNAME", "Escalation Target Loot")
+EMBED_FOOTER = os.getenv("EMBED_FOOTER", "Die Division Drei • SHD Intel")
+EMBED_USERNAME = os.getenv("EMBED_USERNAME", "ISAC – Die Division Drei")
 
 USER_AGENT = os.getenv(
     "USER_AGENT",
@@ -60,19 +60,19 @@ def fetch_json(url: str) -> Dict:
 
 
 TOKEN_LABELS = {
-    "ar": "Assault Rifle",
+   "ar": "Sturmgewehr",
     "lmg": "LMG",
-    "mmr": "Marksman Rifle",
-    "pistol": "Pistol",
-    "rifle": "Rifle",
-    "shotgun": "Shotgun",
-    "smg": "SMG",
-    "mask": "Mask",
-    "backpack": "Backpack",
-    "chest": "Body Armor",
-    "gloves": "Gloves",
+    "mmr": "Präzisionsgewehr",
+    "pistol": "Pistole",
+    "rifle": "Gewehr",
+    "shotgun": "Schrotflinte",
+    "smg": "MP",
+    "mask": "Maske",
+    "backpack": "Rucksack",
+    "chest": "Brustschutz",
+    "gloves": "Handschuhe",
     "holster": "Holster",
-    "kneepads": "Kneepads",
+    "kneepads": "Knieschoner",
 }
 
 
@@ -178,23 +178,23 @@ def pick_escalation_snapshot(data: Dict, target_day: str) -> Tuple[str, str, Lis
 
 
 def build_discord_embed(week: str, target_day: str, mission_rows: List[List[str]], vendor_rows: List[List[str]]) -> Dict:
-    mission_table = build_table(["#", "Mission", "Target Loot"], mission_rows)
-    vendor_table = build_table(["#", "Type", "Lineup"], vendor_rows)
+    mission_table = build_table(["#", "Mission", "Zielbeute"], mission_rows)
+    vendor_table = build_table(["#", "Typ", "Angebot"], vendor_rows)
 
     return {
-        "title": "Escalation",
-        "description": f"Week of: {week} / Target Loot Date: {target_day}",
+        "title": "🎯 Tägliche Zielbeute",
+        "description": f"📅 Woche: {week} / Zielbeute: {target_day}",
         "color": EMBED_COLOR,
         "timestamp": utc_now().isoformat(),
         "footer": {"text": EMBED_FOOTER},
         "fields": [
             {
-                "name": "Escalation Target Loot",
+                "name": "☠️ Eskalation Zielbeute",
                 "value": truncate(mission_table, 1024),
                 "inline": False,
             },
             {
-                "name": "Escalation Requisition Vendor",
+                "name": "🛒 Eskalation Händler",
                 "value": truncate(vendor_table, 1024),
                 "inline": False,
             },
