@@ -244,14 +244,14 @@ weapon_cache = normalize_label(
     str(row.get("prototype_weapon_cache", "")).strip()
 )
 
-    mission_rows: List[List[str]] = []
+   mission_rows: List[List[str]] = []
     max_len = min(len(chosen_missions), len(chosen_loot))
 
     for i in range(max_len):
         mission_rows.append([
             str(i + 1),
             chosen_missions[i],
-            chosen_loot[i]
+            chosen_loot[i],
         ])
 
     vendor_rows = [
