@@ -58,6 +58,14 @@ def fetch_json(url: str) -> Dict:
     except json.JSONDecodeError as exc:
         raise RuntimeError("Event index returned invalid JSON.") from exc
 
+MISSION_LABELS = {
+    "the art museum": "Kunstmuseum",
+    "capitol building": "Kapitol",
+    "jefferson plaza": "Jefferson Plaza",
+    "lincoln memorial": "Lincoln Memorial",
+    "federal emergency bunker": "Notfallbunker des Bundes",
+}
+
 
 TOKEN_LABELS = {
     # Waffen
@@ -228,8 +236,13 @@ def pick_escalation_snapshot(data: Dict, target_day: str) -> Tuple[str, str, Lis
         chosen_day = str(row.get("day", "")).strip()
         chosen_missions = [str(m).strip() for m in entry.get("missions", [])]
         chosen_loot = [normalize_label(v) for v in row.get("target_loot", [])]
-        gear_cache = normalize_label(str(row.get("prototype_gear_cache", "")).strip())
-        weapon_cache = normalize_label(str(row.get("prototype_weapon_cache", "")).strip())
+        gear_cache = normalize_label(
+        str(row.get("prototype_gear_cache", "")).strip()
+)
+
+weapon_cache = normalize_label(
+    str(row.get("prototype_weapon_cache", "")).strip()
+)
 
     mission_rows: List[List[str]] = []
     max_len = min(len(chosen_missions), len(chosen_loot))
