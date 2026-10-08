@@ -478,55 +478,108 @@ def build_discord_embed(
     vendor_rows: List[List[str]],
 ) -> Dict:
 
-    mission_table = build_table(
-        ["#", "Mission", "Zielbeute"],
-        mission_rows,
-    )
+    # ==========================================
+    # Missionen als einzelne Discord-Felder
+    # ==========================================
 
-    vendor_table = build_table(
-        ["#", "Typ", "Angebot"],
-        vendor_rows,
-    )
+    mission_fields = []
+
+    for row in mission_rows:
+        number = row[0]
+        mission = row[1]
+        loot = row[2]
+
+        # Waffen bekommen ein Waffen-Symbol,
+        # Ausrüstung ein Ausrüstungs-Symbol.
+        weapon_names = {
+            "Sturmgewehr",
+            "LMG",
+            "Präzisionsgewehr",
+            "Pistole",
+            "Gewehr",
+            "Schrotflinte",
+            "MP",
+        }
+
+        if loot in weapon_names:
+            loot_icon = "🔫"
+        else:
+            loot_icon = "🛡️"
+
+        mission_fields.append(
+            {
+                "name": f"🟠 {number.zfill(2)} · {mission}",
+                "value": f"{loot_icon} **{loot}**",
+                "inline": True,
+            }
+        )
+
+    # ==========================================
+    # Prototyp-Händler
+    # ==========================================
+
+    vendor_lines = []
+
+    for row in vendor_rows:
+        vendor_type = row[1]
+        offer = row[2]
+
+        if "Waffe" in vendor_type:
+            icon = "🔫"
+        else:
+            icon = "🛡️"
+
+        vendor_lines.append(
+            f"{icon} **{vendor_type}** → **{offer}**"
+        )
+
+    vendor_text = "\n".join(vendor_lines)
+
+    # ==========================================
+    # Discord Embed
+    # ==========================================
 
     return {
-        "title": "🎯 Tägliche Zielbeute",
+        "title": "🎯 TÄGLICHE ZIELBEUTE",
 
         "description": (
-            f"📅 Woche: {week} / "
-            f"Zielbeute: {target_day}"
+            f"📅 **{target_day}**  •  "
+            f"Woche **{week}**\n"
+            "☠️ Aktuelle Eskalations-Zielbeute"
         ),
 
-        "color": EMBED_COLOR,
+        # SHD-/Division-Orange
+        "color": 0xF36C21,
+
+        "url": DIVISION2_URL,
 
         "timestamp": utc_now().isoformat(),
 
         "footer": {
-            "text": EMBED_FOOTER,
+            "text": "SHD INTEL • Die Division Drei"
         },
 
         "fields": [
             {
-                "name": "☠️ Eskalation Zielbeute",
-                "value": truncate(
-                    mission_table,
-                    1024,
-                ),
+                "name": "☠️ ESKALATION · ZIELBEUTE",
+                "value": " ",
                 "inline": False,
             },
+
+            *mission_fields,
+
             {
-                "name": (
-                    "🛒 Eskalation / "
-                    "Prototyp-Händler"
-                ),
-                "value": truncate(
-                    vendor_table,
-                    1024,
-                ),
+                "name": "🛒 PROTOTYP-HÄNDLER",
+                "value": vendor_text,
                 "inline": False,
             },
+
             {
-                "name": "Quelle",
-                "value": DIVISION2_URL,
+                "name": "📡 Quelle",
+                "value": (
+                    f"[Division 2 Escalation Data]"
+                    f"({DIVISION2_URL})"
+                ),
                 "inline": False,
             },
         ],
