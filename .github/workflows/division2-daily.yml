@@ -5,6 +5,9 @@ on:
     - cron: "0 8 * * *"
   workflow_dispatch:
 
+permissions:
+  contents: write
+
 jobs:
   run-daily:
     runs-on: ubuntu-latest
@@ -32,3 +35,19 @@ jobs:
           EMBED_USERNAME: Escalation Target Loot
         run: |
           python division2_daily.py
+
+      - name: Save Discord message ID
+        run: |
+          if [ -f last_discord_message_id.txt ]; then
+            git config user.name "github-actions[bot]"
+            git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+            git add last_discord_message_id.txt
+            if ! git diff --cached --quiet; then
+              git commit -m "Update last Discord message ID"
+              git push
+            else
+              echo "No change to the saved Discord message ID."
+            fi
+          else
+            echo "last_discord_message_id.txt was not created; nothing to save."
+          fi
