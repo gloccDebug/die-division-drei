@@ -1,4 +1,82 @@
-    )
+import os
+import sys
+from datetime import datetime, timezone
+from typing import Any, Dict, List, Optional, Tuple
+
+import requests
+
+DISCORD_WEBHOOK_URL = os.environ.get("DISCORD_WEBHOOK_URL", "").strip()
+EVENT_INDEX_URL = os.environ.get(
+    "EVENT_INDEX_URL",
+    "https://hi-dep.github.io/division2/data/event/index.json",
+).strip()
+EMBED_FOOTER = os.environ.get("EMBED_FOOTER", "Escalation Target Loot")
+EMBED_USERNAME = os.environ.get("EMBED_USERNAME", "Escalation Target Loot")
+MESSAGE_ID_FILE = "last_discord_message_id.txt"
+REQUEST_TIMEOUT = 15
+
+
+def utc_now() -> datetime:
+    return datetime.now(timezone.utc)
+
+
+def truncate(text: str, max_length: int) -> str:
+    if len(text) <= max_length:
+        return text
+    return text[: max_length - 3] + "..."
+
+
+def fetch_json(url: str) -> Dict[str, Any]:
+    response = requests.get(url, timeout=REQUEST_TIMEOUT)
+    response.raise_for_status()
+    return response.json()
+
+
+def pick_escalation_snapshot(
+    data: Dict[str, Any], today_str: str
+) -> Tuple[str, str, List[Tuple[str, str]], List[Tuple[str, str]]]:
+    escalation_list = data.get("Escalation", [])
+    if not escalation_list:
+        raise ValueError("Keine Escalation-Daten im JSON gefunden.")
+
+    # Neuesten bzw. passenden Block ermitteln
+    selected_block = escalation_list[-1]
+    week = str(selected_block.get("week", "Unbekannt"))
+    missions: List[str] = selected_block.get("missions", [])
+
+    daily_loot_entries = selected_block.get("target_loot_by_day", [])
+    if not daily_loot_entries:
+        raise ValueError("Keine täglichen Loot-Einträge gefunden.")
+
+    # Passenden Tag suchen oder auf den letzten verfügbaren Tag zurückfallen
+    matching_day_entry: Optional[Dict[str, Any]] = None
+    for entry in daily_loot_entries:
+        if entry.get("day") == today_str:
+            matching_day_entry = entry
+            break
+
+    if not matching_day_entry:
+        matching_day_entry = daily_loot_entries[-1]
+
+    target_day = str(matching_day_entry.get("day", today_str))
+    loot_items = matching_day_entry.get("target_loot", [])
+
+    mission_rows: List[Tuple[str, str]] = []
+    for idx, mission in enumerate(missions):
+        loot = loot_items[idx] if idx < len(loot_items) else ""
+        mission_rows.append((mission, loot))
+
+    # Caches / Vendor Rows
+    vendor_rows: List[Tuple[str, str]] = []
+    gear_cache = matching_day_entry.get("prototype_gear_cache")
+    if gear_cache:
+        vendor_rows.append(("Prototype Gear Cache", str(gear_cache).upper()))
+
+    weapon_cache = matching_day_entry.get("prototype_weapon_cache")
+    if weapon_cache:
+        vendor_rows.append(("Prototype Weapon Cache", str(weapon_cache).upper()))
+
+    return week, target_day, mission_rows, vendor_rows
 
 
 def build_discord_embed(week, target_day, mission_rows, vendor_rows) -> Dict[str, Any]:
@@ -6,7 +84,7 @@ def build_discord_embed(week, target_day, mission_rows, vendor_rows) -> Dict[str
     if mission_rows:
         fields.append({
             "name": "Missions / Target Loot",
-            "value": truncate("\\n".join(
+            "value": truncate("\n".join(
                 f"**{name}**" + (f" — {detail}" if detail else "")
                 for name, detail in mission_rows
             ), 1024),
@@ -15,7 +93,7 @@ def build_discord_embed(week, target_day, mission_rows, vendor_rows) -> Dict[str
     if vendor_rows:
         fields.append({
             "name": "Vendors",
-            "value": truncate("\\n".join(
+            "value": truncate("\n".join(
                 f"**{name}**" + (f" — {detail}" if detail else "")
                 for name, detail in vendor_rows
             ), 1024),
