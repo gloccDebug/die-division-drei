@@ -1,127 +1,555 @@
+from __future__ import annotations
+
+import json
 import os
 import sys
 from datetime import datetime, timezone
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Dict, List, Tuple
 
 import requests
 
-DISCORD_WEBHOOK_URL = os.environ.get("DISCORD_WEBHOOK_URL", "").strip()
-EVENT_INDEX_URL = os.environ.get(
+
+# =========================
+# Configuration
+# =========================
+
+DIVISION2_URL = os.getenv(
+    "DIVISION2_URL",
+    "https://hi-dep.github.io/division2/?view=event&lang=en",
+)
+
+EVENT_INDEX_URL = os.getenv(
     "EVENT_INDEX_URL",
     "https://hi-dep.github.io/division2/data/event/index.json",
-).strip()
-EMBED_FOOTER = os.environ.get("EMBED_FOOTER", "Escalation Target Loot")
-EMBED_USERNAME = os.environ.get("EMBED_USERNAME", "Escalation Target Loot")
-MESSAGE_ID_FILE = "last_discord_message_id.txt"
-REQUEST_TIMEOUT = 15
+)
 
+DISCORD_WEBHOOK_URL = os.getenv("DISCORD_WEBHOOK_URL", "")
+
+MESSAGE_ID_FILE = "last_discord_message_id.txt"
+
+REQUEST_TIMEOUT = int(os.getenv("REQUEST_TIMEOUT", "30"))
+
+EMBED_COLOR = int(os.getenv("EMBED_COLOR", str(0xE67E22)))
+
+EMBED_FOOTER = os.getenv(
+    "EMBED_FOOTER",
+    "Die Division Drei • SHD Intel",
+)
+
+EMBED_USERNAME = os.getenv(
+    "EMBED_USERNAME",
+    "ISAC – Die Division Drei",
+)
+
+USER_AGENT = os.getenv(
+    "USER_AGENT",
+    (
+        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+        "AppleWebKit/537.36 (KHTML, like Gecko) "
+        "Chrome/124.0.0.0 Safari/537.36"
+    ),
+)
+
+
+# =========================
+# Allgemeine Funktionen
+# =========================
 
 def utc_now() -> datetime:
     return datetime.now(timezone.utc)
 
 
-def truncate(text: str, max_length: int) -> str:
-    if len(text) <= max_length:
-        return text
-    return text[: max_length - 3] + "..."
+def truncate(value: str, limit: int) -> str:
+    if len(value) <= limit:
+        return value
+
+    return value[: limit - 3].rstrip() + "..."
 
 
-def fetch_json(url: str) -> Dict[str, Any]:
-    response = requests.get(url, timeout=REQUEST_TIMEOUT)
+def fetch_json(url: str) -> Dict:
+    headers = {"User-Agent": USER_AGENT}
+
+    response = requests.get(
+        url,
+        headers=headers,
+        timeout=REQUEST_TIMEOUT,
+    )
+
     response.raise_for_status()
-    return response.json()
 
+    try:
+        return response.json()
+    except json.JSONDecodeError as exc:
+        raise RuntimeError(
+            "Event index returned invalid JSON."
+        ) from exc
+
+
+# =========================
+# Deutsche Bezeichnungen
+# =========================
+
+# Waffen
+TOKEN_LABELS = {
+    "ar": "Sturmgewehr",
+    "lmg": "LMG",
+    "mmr": "Präzisionsgewehr",
+    "pistol": "Pistole",
+    "rifle": "Gewehr",
+    "shotgun": "Schrotflinte",
+    "smg": "MP",
+
+    # Ausrüstungsteile
+    "mask": "Maske",
+    "backpack": "Rucksack",
+    "chest": "Brustschutz",
+    "gloves": "Handschuhe",
+    "holster": "Holster",
+    "kneepads": "Knieschoner",
+}
+
+
+# =========================
+# Deutsche Gear-Set-Namen
+# =========================
+
+GEAR_SET_LABELS = {
+    "striker's battlegear": "Kampfausrüstung des Stürmers",
+    "strikers battlegear": "Kampfausrüstung des Stürmers",
+
+    "core strength": "Rumpfstärke",
+
+    "aces & eights": "Asse und Achten",
+
+    "hunter's fury": "Zorn des Jägers",
+    "hunters fury": "Zorn des Jägers",
+
+    "foundry bulwark": "Gießerei-Bollwerk",
+
+    "future initiative": "Zukunftsinitiative",
+}
+
+
+def normalize_label(value: str) -> str:
+    raw = str(value or "").strip()
+
+    if not raw:
+        return "N/A"
+
+    key = raw.lower()
+
+    # Waffen und Ausrüstung
+    if key in TOKEN_LABELS:
+        return TOKEN_LABELS[key]
+
+    # Ausstattungsgarnituren
+    if key in GEAR_SET_LABELS:
+        return GEAR_SET_LABELS[key]
+
+    # Noch nicht geprüfte Namen bleiben im Original.
+    return raw
+
+
+# =========================
+# Missionsnamen
+# =========================
+
+# Nur Namen verwenden, bei denen wir die deutsche
+# Bezeichnung sicher festgelegt haben.
+#
+# Nicht aufgeführte Missionsnamen bleiben Englisch.
+
+MISSION_LABELS = {
+    "the art museum": "Kunstmuseum",
+    "capitol building": "Kapitol",
+}
+
+
+def normalize_mission(value: str) -> str:
+    raw = str(value or "").strip()
+
+    if not raw:
+        return "N/A"
+
+    return MISSION_LABELS.get(raw.lower(), raw)
+
+
+# =========================
+# Tabellen
+# =========================
+
+def build_table(
+    headers: List[str],
+    rows: List[List[str]],
+) -> str:
+
+    widths = [len(h) for h in headers]
+
+    for row in rows:
+        for idx, cell in enumerate(row):
+            widths[idx] = max(
+                widths[idx],
+                len(str(cell)),
+            )
+
+    def fmt_row(cols: List[str]) -> str:
+        return " | ".join(
+            str(c).ljust(widths[idx])
+            for idx, c in enumerate(cols)
+        )
+
+    separator = "-+-".join(
+        "-" * width
+        for width in widths
+    )
+
+    lines = [
+        fmt_row(headers),
+        separator,
+    ]
+
+    lines.extend(
+        fmt_row(row)
+        for row in rows
+    )
+
+    return "```\n" + "\n".join(lines) + "\n```"
+
+
+# =========================
+# Zielbeute auswählen
+# =========================
 
 def pick_escalation_snapshot(
-    data: Dict[str, Any], today_str: str
-) -> Tuple[str, str, List[Tuple[str, str]], List[Tuple[str, str]]]:
-    escalation_list = data.get("Escalation", [])
-    if not escalation_list:
-        raise ValueError("Keine Escalation-Daten im JSON gefunden.")
+    data: Dict,
+    target_day: str,
+) -> Tuple[
+    str,
+    str,
+    List[List[str]],
+    List[List[str]],
+]:
 
-    # Neuesten bzw. passenden Block ermitteln
-    selected_block = escalation_list[-1]
-    week = str(selected_block.get("week", "Unbekannt"))
-    missions: List[str] = selected_block.get("missions", [])
+    escalation_list = data.get("Escalation")
 
-    daily_loot_entries = selected_block.get("target_loot_by_day", [])
-    if not daily_loot_entries:
-        raise ValueError("Keine täglichen Loot-Einträge gefunden.")
+    if (
+        not isinstance(escalation_list, list)
+        or not escalation_list
+    ):
+        raise RuntimeError(
+            "Escalation data is missing from event index."
+        )
 
-    # Passenden Tag suchen oder auf den letzten verfügbaren Tag zurückfallen
-    matching_day_entry: Optional[Dict[str, Any]] = None
-    for entry in daily_loot_entries:
-        if entry.get("day") == today_str:
-            matching_day_entry = entry
+    entries = [
+        entry
+        for entry in escalation_list
+        if isinstance(entry, dict)
+    ]
+
+    if not entries:
+        raise RuntimeError(
+            "Escalation entries are invalid."
+        )
+
+    chosen_week = ""
+    chosen_day = ""
+    chosen_missions: List[str] = []
+    chosen_loot: List[str] = []
+
+    gear_cache = ""
+    weapon_cache = ""
+
+    # ==========================================
+    # Zuerst exakten heutigen Tag suchen
+    # ==========================================
+
+    for entry in entries:
+
+        missions = entry.get("missions")
+        rows = entry.get("target_loot_by_day")
+
+        if (
+            not isinstance(missions, list)
+            or not isinstance(rows, list)
+        ):
+            continue
+
+        for row in rows:
+
+            if not isinstance(row, dict):
+                continue
+
+            day = str(
+                row.get("day", "")
+            ).strip()
+
+            if day != target_day:
+                continue
+
+            chosen_week = str(
+                entry.get("week", "")
+            ).strip()
+
+            chosen_day = day
+
+            chosen_missions = [
+                normalize_mission(m)
+                for m in missions
+            ]
+
+            chosen_loot = [
+                normalize_label(v)
+                for v in row.get(
+                    "target_loot",
+                    [],
+                )
+            ]
+
+            # Die Werte der Prototyp-Kisten
+            # sind ebenfalls Loot-Namen:
+            # z.B. mask / lmg.
+            gear_cache = normalize_label(
+                str(
+                    row.get(
+                        "prototype_gear_cache",
+                        "",
+                    )
+                ).strip()
+            )
+
+            weapon_cache = normalize_label(
+                str(
+                    row.get(
+                        "prototype_weapon_cache",
+                        "",
+                    )
+                ).strip()
+            )
+
             break
 
-    if not matching_day_entry:
-        matching_day_entry = daily_loot_entries[-1]
+        if chosen_day:
+            break
 
-    target_day = str(matching_day_entry.get("day", today_str))
-    loot_items = matching_day_entry.get("target_loot", [])
+    # ==========================================
+    # Fallback: neuesten vorhandenen Tag nehmen
+    # ==========================================
 
-    mission_rows: List[Tuple[str, str]] = []
-    for idx, mission in enumerate(missions):
-        loot = loot_items[idx] if idx < len(loot_items) else ""
-        mission_rows.append((mission, loot))
+    if not chosen_day:
 
-    # Caches / Vendor Rows
-    vendor_rows: List[Tuple[str, str]] = []
-    gear_cache = matching_day_entry.get("prototype_gear_cache")
-    if gear_cache:
-        vendor_rows.append(("Prototype Gear Cache", str(gear_cache).upper()))
+        latest = None
 
-    weapon_cache = matching_day_entry.get("prototype_weapon_cache")
-    if weapon_cache:
-        vendor_rows.append(("Prototype Weapon Cache", str(weapon_cache).upper()))
+        for entry in entries:
 
-    return week, target_day, mission_rows, vendor_rows
+            missions = entry.get("missions")
+            rows = entry.get("target_loot_by_day")
+
+            if (
+                not isinstance(missions, list)
+                or not isinstance(rows, list)
+            ):
+                continue
+
+            for row in rows:
+
+                if not isinstance(row, dict):
+                    continue
+
+                day = str(
+                    row.get("day", "")
+                ).strip()
+
+                if not day:
+                    continue
+
+                candidate = (
+                    day,
+                    entry,
+                    row,
+                )
+
+                if (
+                    latest is None
+                    or day > latest[0]
+                ):
+                    latest = candidate
+
+        if latest is None:
+            raise RuntimeError(
+                "No daily target loot rows found in escalation data."
+            )
+
+        _, entry, row = latest
+
+        chosen_week = str(
+            entry.get("week", "")
+        ).strip()
+
+        chosen_day = str(
+            row.get("day", "")
+        ).strip()
+
+        chosen_missions = [
+            normalize_mission(m)
+            for m in entry.get(
+                "missions",
+                [],
+            )
+        ]
+
+        chosen_loot = [
+            normalize_label(v)
+            for v in row.get(
+                "target_loot",
+                [],
+            )
+        ]
+
+        gear_cache = normalize_label(
+            str(
+                row.get(
+                    "prototype_gear_cache",
+                    "",
+                )
+            ).strip()
+        )
+
+        weapon_cache = normalize_label(
+            str(
+                row.get(
+                    "prototype_weapon_cache",
+                    "",
+                )
+            ).strip()
+        )
+
+    # ==========================================
+    # Mission-Tabelle
+    # ==========================================
+
+    mission_rows: List[List[str]] = []
+
+    max_len = min(
+        len(chosen_missions),
+        len(chosen_loot),
+    )
+
+    for i in range(max_len):
+
+        mission_rows.append(
+            [
+                str(i + 1),
+                chosen_missions[i],
+                chosen_loot[i],
+            ]
+        )
+
+    # ==========================================
+    # Prototyp-Händler
+    # ==========================================
+
+    vendor_rows = [
+        [
+            "1",
+            "Ausrüstungskiste",
+            gear_cache,
+        ],
+        [
+            "2",
+            "Waffenkiste",
+            weapon_cache,
+        ],
+    ]
+
+    return (
+        chosen_week,
+        chosen_day,
+        mission_rows,
+        vendor_rows,
+    )
 
 
-def build_discord_embed(week, target_day, mission_rows, vendor_rows) -> Dict[str, Any]:
-    fields = []
-    if mission_rows:
-        fields.append({
-            "name": "Missions / Target Loot",
-            "value": truncate("\n".join(
-                f"**{name}**" + (f" — {detail}" if detail else "")
-                for name, detail in mission_rows
-            ), 1024),
-            "inline": False,
-        })
-    if vendor_rows:
-        fields.append({
-            "name": "Vendors",
-            "value": truncate("\n".join(
-                f"**{name}**" + (f" — {detail}" if detail else "")
-                for name, detail in vendor_rows
-            ), 1024),
-            "inline": False,
-        })
-    if not fields:
-        fields.append({
-            "name": "Hinweis",
-            "value": "Für heute wurden keine Missions- oder Händlerdaten erkannt.",
-            "inline": False,
-        })
+# =========================
+# Discord Embed
+# =========================
+
+def build_discord_embed(
+    week: str,
+    target_day: str,
+    mission_rows: List[List[str]],
+    vendor_rows: List[List[str]],
+) -> Dict:
+
+    mission_table = build_table(
+        ["#", "Mission", "Zielbeute"],
+        mission_rows,
+    )
+
+    vendor_table = build_table(
+        ["#", "Typ", "Angebot"],
+        vendor_rows,
+    )
+
     return {
-        "title": f"Division 2 Escalation Target Loot — {target_day}",
-        "description": f"Übersicht für **{target_day}** (Woche: **{week}**).",
-        "color": 0xE67E22,
-        "fields": fields,
+        "title": "🎯 Tägliche Zielbeute",
+
+        "description": (
+            f"📅 Woche: {week} / "
+            f"Zielbeute: {target_day}"
+        ),
+
+        "color": EMBED_COLOR,
+
         "timestamp": utc_now().isoformat(),
-        "footer": {"text": EMBED_FOOTER},
+
+        "footer": {
+            "text": EMBED_FOOTER,
+        },
+
+        "fields": [
+            {
+                "name": "☠️ Eskalation Zielbeute",
+                "value": truncate(
+                    mission_table,
+                    1024,
+                ),
+                "inline": False,
+            },
+            {
+                "name": (
+                    "🛒 Eskalation / "
+                    "Prototyp-Händler"
+                ),
+                "value": truncate(
+                    vendor_table,
+                    1024,
+                ),
+                "inline": False,
+            },
+            {
+                "name": "Quelle",
+                "value": DIVISION2_URL,
+                "inline": False,
+            },
+        ],
     }
 
 
-def send_webhook(embed: Dict[str, Any], replace_previous: bool = True) -> None:
+# =========================
+# Discord Webhook
+# =========================
+
+def send_webhook(embed: Dict, replace_previous: bool = True) -> None:
+
     if not DISCORD_WEBHOOK_URL:
-        raise RuntimeError("Die Umgebungsvariable DISCORD_WEBHOOK_URL ist nicht gesetzt.")
+        raise RuntimeError(
+            "DISCORD_WEBHOOK_URL is not set."
+        )
 
     message_id_file = MESSAGE_ID_FILE
     old_message_id = None
 
+    # Vorherige Nachricht löschen, falls vorhanden
     if replace_previous:
         try:
             with open(message_id_file, "r", encoding="utf-8") as file:
@@ -131,9 +559,18 @@ def send_webhook(embed: Dict[str, Any], replace_previous: bool = True) -> None:
 
         if old_message_id:
             delete_url = f"{DISCORD_WEBHOOK_URL.rstrip('/')}/messages/{old_message_id}"
-            delete_response = requests.delete(delete_url, timeout=REQUEST_TIMEOUT)
-            if delete_response.status_code not in (200, 204, 404):
-                delete_response.raise_for_status()
+            try:
+                delete_response = requests.delete(
+                    delete_url,
+                    timeout=REQUEST_TIMEOUT,
+                )
+                if delete_response.status_code not in (200, 204, 404):
+                    delete_response.raise_for_status()
+            except Exception as delete_exc:
+                print(
+                    f"Warnung: Vorherige Discord-Nachricht ({old_message_id}) konnte nicht gelöscht werden: {delete_exc}",
+                    file=sys.stderr,
+                )
 
     separator = "&" if "?" in DISCORD_WEBHOOK_URL else "?"
     post_url = f"{DISCORD_WEBHOOK_URL}{separator}wait=true"
@@ -147,45 +584,101 @@ def send_webhook(embed: Dict[str, Any], replace_previous: bool = True) -> None:
         post_url,
         json=payload,
         timeout=REQUEST_TIMEOUT,
-        headers={"Content-Type": "application/json"},
+        headers={
+            "Content-Type": "application/json",
+        },
     )
+
     response.raise_for_status()
 
     try:
         new_message_id = str(response.json()["id"])
+        with open(message_id_file, "w", encoding="utf-8") as file:
+            file.write(new_message_id)
+        print(f"Discord-Nachricht gesendet. ID: {new_message_id}")
     except (ValueError, KeyError, TypeError) as exc:
-        raise RuntimeError("Discord hat keine Nachrichten-ID zurückgegeben.") from exc
+        print(f"Hinweis: Konnte keine ID aus Discord-Antwort extrahieren: {exc}", file=sys.stderr)
 
-    # GitHub Actions muss diese Datei nach dem Lauf ins Repository committen.
-    with open(message_id_file, "w", encoding="utf-8") as file:
-        file.write(new_message_id)
 
-    print(f"Discord-Nachricht gesendet. ID: {new_message_id}")
-
+# =========================
+# Main
+# =========================
 
 def main() -> int:
+
     try:
-        today = utc_now().strftime("%Y-%m-%d")
-        data = fetch_json(EVENT_INDEX_URL)
-        week, target_day, mission_rows, vendor_rows = pick_escalation_snapshot(data, today)
-        embed = build_discord_embed(week, target_day, mission_rows, vendor_rows)
-        send_webhook(embed)
-        print("Webhook sent successfully.")
+
+        today = utc_now().strftime(
+            "%Y-%m-%d"
+        )
+
+        data = fetch_json(
+            EVENT_INDEX_URL
+        )
+
+        (
+            week,
+            target_day,
+            mission_rows,
+            vendor_rows,
+        ) = pick_escalation_snapshot(
+            data,
+            today,
+        )
+
+        embed = build_discord_embed(
+            week,
+            target_day,
+            mission_rows,
+            vendor_rows,
+        )
+
+        send_webhook(embed, replace_previous=True)
+
+        print(
+            "Webhook sent successfully."
+        )
+
         return 0
+
     except Exception as exc:
-        print(f"Job failed: {exc}", file=sys.stderr)
+
+        print(
+            f"Job failed: {exc}",
+            file=sys.stderr,
+        )
+
         try:
+
             if DISCORD_WEBHOOK_URL:
+
                 error_embed = {
-                    "title": "Division 2 Daily Reset - Fehler",
-                    "description": truncate(f"Fehler beim Abrufen/Senden: {exc}", 4000),
+                    "title": (
+                        "Division 2 Daily Reset - Fehler"
+                    ),
+
+                    "description": truncate(
+                        f"Fehler beim Abrufen/Senden: {exc}",
+                        4000,
+                    ),
+
                     "color": 0xE74C3C,
+
                     "timestamp": utc_now().isoformat(),
-                    "footer": {"text": EMBED_FOOTER},
+
+                    "footer": {
+                        "text": EMBED_FOOTER,
+                    },
                 }
-                send_webhook(error_embed, replace_previous=False)
-        except Exception as error_exc:
-            print(f"Fehler-Webhook konnte nicht gesendet werden: {error_exc}", file=sys.stderr)
+
+                send_webhook(
+                    error_embed,
+                    replace_previous=False,
+                )
+
+        except Exception:
+            pass
+
         return 1
 
 
